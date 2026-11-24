@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+SPDX-FileCopyrightText: 2026
+
+SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
+-->
+
+<resources>
+    <!-- Launcher / app info name. Separate from kde_connect so upstream translations stay mergeable. -->
+    <string name="app_launcher_name">KDEC</string>
+
+    <string name="simple_view_switch_to_simple">Switch to simple view</string>
+    <string name="simple_view_switch_to_classic">Switch to classic view</string>
+    <string name="simple_view_audio_devices">Audio devices</string>
+    <string name="simple_view_send">Send</string>
+    <string name="simple_view_hide_keyboard">Hide Keyboard</string>
+    <string name="simple_view_no_audio_sinks">No audio devices available</string>
+    <string name="simple_view_no_devices">No devices found — tap refresh</string>
+    <string name="simple_view_by_ip">+ IP</string>
+    <string name="simple_view_permissions_section">Permissions</string>
+    <string name="simple_view_home">Home</string>
+    <string name="simple_view_no_permissions_needed">No plugins need permissions right now</string>
+    <string name="simple_view_select_device">Open Devices to pair or choose a device</string>
+
+    <!-- Simple-view Settings → Plugins tab section headers -->
+    <string name="simple_view_plugins_remote_input">Remote input</string>
+    <string name="simple_view_plugins_media">Media</string>
+    <string name="simple_view_plugins_share_sync">Share &amp; sync</string>
+    <string name="simple_view_plugins_notifications_phone">Notifications &amp; phone</string>
+    <string name="simple_view_plugins_receive_input">Receive input</string>
+    <string name="simple_view_plugins_device">Device</string>
+    <string name="simple_view_plugins_other">Other</string>
+
+    <!-- Simple-view Settings → Switch tab → Notifications -->
+    <string name="simple_notifications_category">Notifications</string>
+    <string name="simple_show_persistent_notification">Show persistent</string>
+    <string name="simple_show_persistent_notification_summary">Always-on status while connected in the background. Android may still show a quiet indicator when this is off.</string>
+    <string name="simple_show_alert_notifications">Show alerts</string>
+    <string name="simple_show_alert_notifications_summary">File transfers, pairing requests, pings, and similar event notifications</string>
+    <string name="simple_foreground_notification_quiet">Running in background</string>
+</resources>

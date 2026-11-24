@@ -42,6 +42,9 @@ object IntentHelper {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .build()
+            if (!NotificationHelper.areAlertNotificationsEnabled(context)) {
+                return
+            }
             val id = SystemClock.elapsedRealtime().toInt()
             NotificationManagerCompat.from(context).notify(id, notification)
         } else {

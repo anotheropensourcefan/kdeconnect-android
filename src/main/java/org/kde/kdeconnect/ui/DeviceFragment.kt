@@ -42,6 +42,8 @@ import org.kde.kdeconnect.ui.compose.screen.device.DeviceErrorScreen
 import org.kde.kdeconnect.ui.compose.screen.device.DevicePairingScreen
 import org.kde.kdeconnect.ui.compose.screen.device.DeviceViewModel
 import org.kde.kdeconnect.ui.compose.screen.device.PluginsScreen
+import org.kde.kdeconnect.ui.simple.SimpleHomeScreen
+import org.kde.kdeconnect.ui.simple.SimpleViewPreferences
 import org.kde.kdeconnect_tp.R
 import org.kde.kdeconnect_tp.databinding.ActivityDeviceBinding
 
@@ -76,6 +78,9 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
 
     private val viewModel by viewModels<DeviceViewModel>()
 
+    /** Tracks which device home layout is currently composed, so onResume can recompose after a view-mode switch. */
+    private var lastSimpleViewEnabled: Boolean? = null
+
     override fun onInflateBinding(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -98,6 +103,10 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
         override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
             menu.clear()
             val device = device ?: return
+            // Simple view uses in-screen Settings for these actions; hide the overflow menu.
+            if (SimpleViewPreferences.isSimpleViewEnabled(requireContext())) {
+                return
+            }
 
             //Plugins button list
             val menuEntries: Collection<Plugin.PluginUiMenuEntry> = if (device.isReachable) {
@@ -115,6 +124,13 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
             menu.add(R.string.device_menu_plugins).setOnMenuItemClickListener {
                 startActivity(intent)
                 true
+            }
+            if (device.isReachable && device.isPaired && !SimpleViewPreferences.isSimpleViewEnabled(requireContext())) {
+                menu.add(R.string.simple_view_switch_to_simple).setOnMenuItemClickListener {
+                    SimpleViewPreferences.setSimpleViewEnabled(requireContext(), true)
+                    refreshUI()
+                    true
+                }
             }
             if (device.isReachable) {
                 val builder = MaterialAlertDialogBuilder(requireContext())
@@ -216,6 +232,11 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
             isFocusableInTouchMode = true
             requestFocus()
         }
+        // Preference may have changed while PluginSettingsActivity was open (switch to classic view)
+        val simpleEnabled = SimpleViewPreferences.isSimpleViewEnabled(requireContext())
+        if (lastSimpleViewEnabled != null && lastSimpleViewEnabled != simpleEnabled) {
+            refreshUI()
+        }
     }
 
     @UiThread
@@ -225,6 +246,15 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
 
         //Once in-app, there is no point in keep displaying the notification if any
         device.hidePairingNotification()
+        val simpleViewEnabled = SimpleViewPreferences.isSimpleViewEnabled(requireContext())
+        lastSimpleViewEnabled = simpleViewEnabled
+
+        if (simpleViewEnabled) {
+            mActivity?.supportActionBar?.apply {
+                title = null
+                subtitle = null
+            }
+        }
 
         binding.deviceView.apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -233,70 +263,77 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
                     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
                     val pairingErrorMessage by viewModel.pairingErrorMessage.collectAsStateWithLifecycle()
 
-                    when (device.pairStatus) {
-                        PairingHandler.PairState.Paired -> {
-                            if (device.isReachable) {
-                                val pluginsWithButtons =
-                                    device.loadedPlugins.values.flatMap { plugin -> plugin.getUiButtons() }
-                                val pluginsNeedPermissions =
-                                    device.pluginsWithoutPermissions.values.filter { plugin ->
-                                        device.isPluginEnabled(plugin.pluginKey)
-                                    }
-                                val pluginsNeedOptionalPermissions =
-                                    device.pluginsWithoutOptionalPermissions.values.filter { plugin ->
-                                        device.isPluginEnabled(plugin.pluginKey)
-                                    }
-                                PluginsScreen(
-                                    pluginsWithButtons = pluginsWithButtons,
-                                    pluginsNeedPermissions = pluginsNeedPermissions,
-                                    pluginsNeedOptionalPermissions = pluginsNeedOptionalPermissions,
-                                    onButtonClick = { button -> button.onClick(mActivity!!) },
-                                    actionNeedPermissions = { plugin ->
+                    if (simpleViewEnabled) {
+                        // Always keep Devices/Settings chrome; offline/unpaired states are in-home.
+                        SimpleHomeScreen(device = device)
+                    } else {
+                        when (device.pairStatus) {
+                            PairingHandler.PairState.Paired -> {
+                                if (device.isReachable) {
+                                    val pluginsNeedPermissions =
+                                        device.pluginsWithoutPermissions.values.filter { plugin ->
+                                            device.isPluginEnabled(plugin.pluginKey)
+                                        }
+                                    val pluginsNeedOptionalPermissions =
+                                        device.pluginsWithoutOptionalPermissions.values.filter { plugin ->
+                                            device.isPluginEnabled(plugin.pluginKey)
+                                        }
+                                    val needPermissionsAction: (Plugin) -> Unit = { plugin ->
                                         plugin.permissionExplanationDialog.show(
                                             childFragmentManager,
                                             null
                                         )
-                                    },
-                                    actionNeedOptionalPermissions = { plugin ->
+                                    }
+                                    val needOptionalPermissionsAction: (Plugin) -> Unit = { plugin ->
                                         plugin.optionalPermissionExplanationDialog.show(
                                             childFragmentManager,
                                             null
                                         )
                                     }
-                                )
-                                displayBatteryInfoIfPossible()
-                            } else {
-                                DeviceErrorScreen(
-                                    isRefreshing = isRefreshing,
-                                    onRefresh = { refreshDevicesAction() }
+                                    val pluginsWithButtons =
+                                        device.loadedPlugins.values.flatMap { plugin -> plugin.getUiButtons() }
+                                    PluginsScreen(
+                                        pluginsWithButtons = pluginsWithButtons,
+                                        pluginsNeedPermissions = pluginsNeedPermissions,
+                                        pluginsNeedOptionalPermissions = pluginsNeedOptionalPermissions,
+                                        onButtonClick = { button -> button.onClick(mActivity!!) },
+                                        actionNeedPermissions = needPermissionsAction,
+                                        actionNeedOptionalPermissions = needOptionalPermissionsAction,
+                                    )
+                                    displayBatteryInfoIfPossible()
+                                } else {
+                                    DeviceErrorScreen(
+                                        isRefreshing = isRefreshing,
+                                        onRefresh = { refreshDevicesAction() }
+                                    )
+                                }
+                            }
+
+                            else -> {
+                                DevicePairingScreen(
+                                    pairStatus = device.pairStatus,
+                                    verificationKey = device.verificationKey ?: "",
+                                    pairMessage = pairingErrorMessage,
+                                    onRequestPairing = {
+                                        viewModel.setPairingErrorMessage(message = null)
+                                        device.requestPairing()
+                                        refreshUI()
+                                    },
+                                    onAcceptPairing = {
+                                        device.acceptPairing()
+                                        refreshUI()
+                                    },
+                                    onRejectPairing = {
+                                        device.apply {
+                                            // Remove listener so buttons don't show for an instant before changing the view
+                                            removePluginsChangedListener(pluginsChangedListener)
+                                            removePairingCallback(pairingCallback)
+                                            cancelPairing()
+                                        }
+                                        (mActivity as? MainActivity)?.onDeviceSelected(null)
+                                    }
                                 )
                             }
-                        }
-
-                        else -> {
-                            DevicePairingScreen(
-                                pairStatus = device.pairStatus,
-                                verificationKey = device.verificationKey ?: "",
-                                pairMessage = pairingErrorMessage,
-                                onRequestPairing = {
-                                    viewModel.setPairingErrorMessage(message =null)
-                                    device.requestPairing()
-                                    refreshUI()
-                                },
-                                onAcceptPairing = {
-                                    device.acceptPairing()
-                                    refreshUI()
-                                },
-                                onRejectPairing = {
-                                    device.apply {
-                                        // Remove listener so buttons don't show for an instant before changing the view
-                                        removePluginsChangedListener(pluginsChangedListener)
-                                        removePairingCallback(pairingCallback)
-                                        cancelPairing()
-                                    }
-                                    (mActivity as? MainActivity)?.onDeviceSelected(null)
-                                }
-                            )
                         }
                     }
                 }

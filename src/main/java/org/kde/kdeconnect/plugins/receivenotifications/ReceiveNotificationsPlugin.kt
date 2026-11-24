@@ -67,6 +67,10 @@ class ReceiveNotificationsPlugin : Plugin() {
             }
         }
 
+        if (!NotificationHelper.areAlertNotificationsEnabled(context)) {
+            return true
+        }
+
         val notificationManager = context.getSystemService<NotificationManager>() ?: return true
 
         val noti =

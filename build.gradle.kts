@@ -38,11 +38,12 @@ android {
     namespace = "org.kde.kdeconnect_tp"
     compileSdk = 37
     defaultConfig {
-        applicationId = "org.kde.kdeconnect_tp"
+        // Distinct from the official app (org.kde.kdeconnect_tp) so both can be installed at once.
+        applicationId = "org.kde.kdec"
         minSdk = 23
         targetSdk = 37
-        versionCode = 13702
-        versionName = "1.37.2"
+        versionCode = 13709
+        versionName = "1.37.8-kdec"
         proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
     buildFeatures {

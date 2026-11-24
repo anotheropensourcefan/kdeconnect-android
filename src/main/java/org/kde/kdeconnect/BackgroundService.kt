@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2014 Albert Vaca Cintora <albertvaka@gmail.com>
+ * SPDX-FileCopyrightText: 2026
  *
  * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
  */
@@ -60,8 +61,10 @@ class BackgroundService : Service() {
         field = MutableLiveData<Boolean>()
 
     fun updateForegroundNotification() {
-        if (NotificationHelper.isPersistentNotificationEnabled(this)) {
-            // Update the foreground notification with the currently connected device list
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ||
+            NotificationHelper.wantsVisiblePersistentNotification(this)
+        ) {
+            // On Oreo+ a FGS notification is always required; content may be rich or minimal.
             val notificationManager = getSystemService<NotificationManager>()
             notificationManager?.notify(FOREGROUND_NOTIFICATION_ID, createForegroundNotification())
         }
@@ -150,15 +153,54 @@ class BackgroundService : Service() {
         if (visible) {
             updateForegroundNotification()
         }
+        else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Cannot fully remove the FGS notification on Oreo+; swap to the minimal form.
+            updateForegroundNotification()
+        }
         else {
             stopForeground(true) // Pass STOP_FOREGROUND_REMOVE instead of true when we only support API 24+
             Start(this)
         }
     }
 
+    /** Apply simple-view "Show persistent" toggle (no-op effect on classic when simple is off). */
+    fun applySimplePersistentNotificationPreference() {
+        changePersistentNotificationVisibility(NotificationHelper.wantsVisiblePersistentNotification(this))
+    }
+
     private fun createForegroundNotification(): Notification {
         // Why is this needed: https://developer.android.com/guide/components/services#Foreground
+        if (!NotificationHelper.wantsVisiblePersistentNotification(this)) {
+            return createMinimalForegroundNotification()
+        }
+        return createRichForegroundNotification()
+    }
 
+    /** Quiet placeholder required by Android 8+ when the user hides the status notification in simple view. */
+    private fun createMinimalForegroundNotification(): Notification {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            action = "org.kde.kdeconnect.FOREGROUND_NOTIFICATION"
+        }
+        val pi = PendingIntent.getActivity(this, 0, intent, UPDATE_IMMUTABLE_FLAGS)
+        return NotificationCompat.Builder(this, NotificationHelper.Channels.PERSISTENT).apply {
+            setSmallIcon(R.drawable.ic_notification)
+            setContentTitle(getString(R.string.kde_connect))
+            setContentText(getString(R.string.simple_foreground_notification_quiet))
+            setOngoing(true)
+            setContentIntent(pi)
+            setPriority(NotificationCompat.PRIORITY_MIN)
+            setShowWhen(false)
+            setSilent(true)
+            setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            setCategory(NotificationCompat.CATEGORY_SERVICE)
+            setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
+            setAutoCancel(false)
+            setLocalOnly(true)
+            setGroup("BackgroundService")
+        }.build()
+    }
+
+    private fun createRichForegroundNotification(): Notification {
         val connectedDevices = mutableListOf<String>()
         val connectedDeviceIds = mutableListOf<String>()
         for (device in applicationInstance.devices.values) {
@@ -253,7 +295,10 @@ class BackgroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand")
-        if (NotificationHelper.isPersistentNotificationEnabled(this)) {
+        // Oreo+: always promote to FGS (platform requirement). Pre-O: only when user wants a status notification.
+        val mustRunForeground = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ||
+            NotificationHelper.wantsVisiblePersistentNotification(this)
+        if (mustRunForeground) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
                     startForeground(FOREGROUND_NOTIFICATION_ID, createForegroundNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)

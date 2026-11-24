@@ -182,6 +182,37 @@ class MousePadPlugin : Plugin() {
         device.sendPacket(np)
     }
 
+    fun sendF11() {
+        val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
+        np["specialKey"] = KeyListenerView.SpecialKeysMap.get(KeyEvent.KEYCODE_F11)
+        sendPacket(np)
+    }
+
+    // Win/Meta+Tab (Task View / Overview)
+    fun sendTaskView() {
+        val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
+        np["super"] = true
+        np["specialKey"] = KeyListenerView.SpecialKeysMap.get(KeyEvent.KEYCODE_TAB)
+        sendPacket(np)
+    }
+
+    // Alt+Tab
+    fun sendNextWindow() {
+        val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
+        np["alt"] = true
+        np["specialKey"] = KeyListenerView.SpecialKeysMap.get(KeyEvent.KEYCODE_TAB)
+        sendPacket(np)
+    }
+
+    // Alt+Shift+Tab
+    fun sendPreviousWindow() {
+        val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
+        np["alt"] = true
+        np["shift"] = true
+        np["specialKey"] = KeyListenerView.SpecialKeysMap.get(KeyEvent.KEYCODE_TAB)
+        sendPacket(np)
+    }
+
     fun sendText(content: String) {
         val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
         np["key"] = content

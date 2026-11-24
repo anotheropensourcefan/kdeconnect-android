@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2023 Albert Vaca Cintora <albertvaka@gmail.com>
+ * SPDX-FileCopyrightText: 2026
  *
  * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
  */
@@ -11,6 +12,7 @@ import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
+import org.kde.kdeconnect.ui.simple.SimpleViewPreferences
 import org.kde.kdeconnect_tp.R
 
 object NotificationHelper {
@@ -81,6 +83,32 @@ object NotificationHelper {
         }
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         return prefs.getBoolean("persistentNotification", false)
+    }
+
+    /**
+     * Whether the user-visible rich status notification should be shown.
+     * Classic view: unchanged upstream rules.
+     * Simple view: also respects [SimpleViewPreferences.KEY_SHOW_PERSISTENT_NOTIFICATION].
+     * On Android 8+, a minimal FGS notification may still be required even when this is false.
+     */
+    fun wantsVisiblePersistentNotification(context: Context): Boolean {
+        if (SimpleViewPreferences.isSimpleViewEnabled(context) &&
+            !SimpleViewPreferences.isShowPersistentNotification(context)
+        ) {
+            return false
+        }
+        return isPersistentNotificationEnabled(context)
+    }
+
+    /**
+     * Event/alert notifications (file transfer, pairing, ping, etc.).
+     * Classic view always allows them; simple view respects the alerts toggle.
+     */
+    fun areAlertNotificationsEnabled(context: Context): Boolean {
+        if (!SimpleViewPreferences.isSimpleViewEnabled(context)) {
+            return true
+        }
+        return SimpleViewPreferences.isShowAlertNotifications(context)
     }
 
     object Channels {

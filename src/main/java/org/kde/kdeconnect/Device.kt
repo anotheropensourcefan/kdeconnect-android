@@ -253,6 +253,8 @@ class Device : PacketReceiver {
     // Notification related methods used during pairing
     //
     fun displayPairingNotification() {
+        if (!NotificationHelper.areAlertNotificationsEnabled(context)) return
+
         val notificationManager = context.getSystemService<NotificationManager>()
             ?: return
 

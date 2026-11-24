@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2023 Albert Vaca Cintora <albertvaka@gmail.com>
+ * SPDX-FileCopyrightText: 2026
  *
  * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
  */
@@ -34,6 +35,7 @@ import androidx.core.view.updatePadding
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
+import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.navigation.NavigationView
 import org.kde.kdeconnect.BackgroundService
 import org.kde.kdeconnect.Device
@@ -41,8 +43,11 @@ import org.kde.kdeconnect.KdeConnect
 import org.kde.kdeconnect.extensions.setOnApplyWindowInsetsListenerCompat
 import org.kde.kdeconnect.helpers.DeviceHelper
 import org.kde.kdeconnect.ui.about.AboutFragment
+import org.kde.kdeconnect.ui.simple.SimpleHomeFragment
+import org.kde.kdeconnect.ui.simple.SimpleViewPreferences
 import org.kde.kdeconnect_tp.R
 import org.kde.kdeconnect_tp.databinding.ActivityMainBinding
+import org.kde.kdeconnect_tp.databinding.ActivityMainSimpleBinding
 
 private const val MENU_ENTRY_ADD_DEVICE = 1 //0 means no-selection
 private const val MENU_ENTRY_SETTINGS = 2
@@ -53,9 +58,11 @@ private const val STATE_SELECTED_MENU_ENTRY = "selected_entry" //Saved only in o
 private const val STATE_SELECTED_DEVICE = "selected_device" //Saved persistently in preferences
 
 class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
-    private val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
-    private val mNavigationView: NavigationView by lazy { binding.navigationDrawer }
+    /** Null in simple view — that mode inflates [ActivityMainSimpleBinding] with no drawer chrome. */
+    private var mNavigationView: NavigationView? = null
     private var mDrawerLayout: DrawerLayout? = null
+    private var mDrawerToggle: ActionBarDrawerToggle? = null
+    private lateinit var toolbarLayout: AppBarLayout
 
     private val upfrontPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN && results[Manifest.permission.ACCESS_LOCAL_NETWORK] == true) {
@@ -70,7 +77,7 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
         }
     }
 
-    private lateinit var mNavViewDeviceName: TextView
+    private var mNavViewDeviceName: TextView? = null
 
     private var mCurrentDevice: String? = null
     private var mCurrentMenuEntry = 0
@@ -84,15 +91,19 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
 
     private val closeDrawerCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
-            mDrawerLayout?.closeDrawer(mNavigationView)
+            val nav = mNavigationView ?: return
+            mDrawerLayout?.closeDrawer(nav)
         }
     }
 
     private val mainFragmentCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
             mCurrentMenuEntry = mCurrentDevice?.let { deviceIdToMenuEntryId(it) } ?: MENU_ENTRY_ADD_DEVICE
-            mNavigationView.setCheckedItem(mCurrentMenuEntry)
-            setContentFragment(mCurrentDevice?.let { DeviceFragment.newInstance(it, false) } ?: PairingFragment())
+            mNavigationView?.setCheckedItem(mCurrentMenuEntry)
+            setContentFragment(
+                mCurrentDevice?.let { DeviceFragment.newInstance(it, false) }
+                    ?: simpleHomeOrPairingFragment()
+            )
         }
     }
 
@@ -101,68 +112,16 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
         super.onCreate(savedInstanceState)
         DeviceHelper.initializeDeviceId(this)
 
-        val root = binding.root
-        setContentView(root)
-        mDrawerLayout = root as? DrawerLayout
-
-        // Pad the drawer header directly: DrawerLayout's default child dispatch stops at
-        // AppBarLayout (which consumes the insets via its own fitsSystemWindows), so neither
-        // NavigationView nor its header ever receive a dispatch.
-        root.setOnApplyWindowInsetsListenerCompat { _, insets ->
-            mNavigationView.getHeaderView(0)?.updatePadding(
-                top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            )
-            insets
-        }
-
-        val mDrawerHeader = mNavigationView.getHeaderView(0)
-        mNavViewDeviceName = mDrawerHeader.findViewById(R.id.device_name)
-        val mNavViewDeviceType = mDrawerHeader.findViewById<ImageView>(R.id.device_type)
-
-        setSupportActionBar(binding.toolbarLayout.toolbar)
-        mDrawerLayout?.let {
-            supportActionBar?.setDisplayHomeAsUpEnabled(true)
-            val mDrawerToggle = DrawerToggle(it).apply { syncState() }
-            it.addDrawerListener(mDrawerToggle)
-            it.setDrawerShadow(R.drawable.drawer_shadow, GravityCompat.START)
-        } ?: {
-            supportActionBar?.setDisplayShowHomeEnabled(false)
-            supportActionBar?.setHomeButtonEnabled(false)
+        val simpleView = SimpleViewPreferences.isSimpleViewEnabled(this)
+        if (simpleView) {
+            setupSimpleContentRoot()
+        } else {
+            setupClassicContentRoot()
         }
 
         // Note: The preference changed listener should be registered before getting the name, because getting
         // it can trigger a background fetch from the internet that will eventually update the preference
         PreferenceManager.getDefaultSharedPreferences(this).registerOnSharedPreferenceChangeListener(this)
-        val deviceName = DeviceHelper.getDeviceName(this)
-        mNavViewDeviceType?.setImageDrawable(DeviceHelper.deviceType.getIcon(this))
-        mNavViewDeviceName.text = deviceName
-        mNavigationView.setNavigationItemSelectedListener { menuItem: MenuItem ->
-            mCurrentMenuEntry = menuItem.itemId
-            when (mCurrentMenuEntry) {
-                MENU_ENTRY_ADD_DEVICE -> {
-                    mCurrentDevice = null
-                    preferences.edit { putString(STATE_SELECTED_DEVICE, null) }
-                    setContentFragment(PairingFragment())
-                }
-
-                MENU_ENTRY_SETTINGS -> {
-                    preferences.edit { putString(STATE_SELECTED_DEVICE, null) }
-                    setContentFragment(SettingsFragment())
-                }
-
-                MENU_ENTRY_ABOUT -> {
-                    preferences.edit { putString(STATE_SELECTED_DEVICE, null) }
-                    setContentFragment(AboutFragment.newInstance())
-                }
-
-                else -> {
-                    val deviceId = mMapMenuToDeviceId[menuItem]
-                    onDeviceSelected(deviceId)
-                }
-            }
-            mDrawerLayout?.closeDrawer(mNavigationView)
-            true
-        }
 
         // Decide which menu entry should be selected at start
         var savedDevice: String?
@@ -203,7 +162,7 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
         }
         mCurrentMenuEntry = savedMenuEntry
         mCurrentDevice = savedDevice
-        mNavigationView.setCheckedItem(savedMenuEntry)
+        mNavigationView?.setCheckedItem(savedMenuEntry)
 
         //FragmentManager will restore whatever fragment was there
         if (savedInstanceState != null) {
@@ -216,9 +175,21 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
             onDeviceSelected(savedDevice)
         } else {
             when (mCurrentMenuEntry) {
-                MENU_ENTRY_SETTINGS -> setContentFragment(SettingsFragment())
-                MENU_ENTRY_ABOUT -> setContentFragment(AboutFragment.newInstance())
-                else -> setContentFragment(PairingFragment())
+                MENU_ENTRY_SETTINGS -> {
+                    if (simpleView) {
+                        onDeviceSelected(null)
+                    } else {
+                        setContentFragment(SettingsFragment())
+                    }
+                }
+                MENU_ENTRY_ABOUT -> {
+                    if (simpleView) {
+                        onDeviceSelected(null)
+                    } else {
+                        setContentFragment(AboutFragment.newInstance())
+                    }
+                }
+                else -> setContentFragment(simpleHomeOrPairingFragment())
             }
         }
 
@@ -241,6 +212,93 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
         // Check savedInstanceState to avoid requesting permissions again if the activity is recreated eg on rotation
         if (missingPermissions.isNotEmpty() && savedInstanceState == null) {
             upfrontPermissionsLauncher.launch(missingPermissions.toTypedArray())
+        }
+    }
+
+    /** Inflate the drawer-free simple root — never uses activity_main or layout-w820dp. */
+    private fun setupSimpleContentRoot() {
+        val binding = ActivityMainSimpleBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        toolbarLayout = binding.toolbarLayout.root
+        toolbarLayout.visibility = View.GONE
+        setSupportActionBar(binding.toolbarLayout.toolbar)
+        supportActionBar?.apply {
+            setDisplayShowTitleEnabled(false)
+            title = null
+            subtitle = null
+            setDisplayHomeAsUpEnabled(false)
+            hide()
+        }
+        mNavigationView = null
+        mDrawerLayout = null
+        mDrawerToggle = null
+        mNavViewDeviceName = null
+        closeDrawerCallback.isEnabled = false
+    }
+
+    private fun setupClassicContentRoot() {
+        val binding = ActivityMainBinding.inflate(layoutInflater)
+        val root = binding.root
+        setContentView(root)
+        toolbarLayout = binding.toolbarLayout.root
+        mDrawerLayout = root as? DrawerLayout
+        mNavigationView = binding.navigationDrawer
+
+        // Pad the drawer header directly: DrawerLayout's default child dispatch stops at
+        // AppBarLayout (which consumes the insets via its own fitsSystemWindows), so neither
+        // NavigationView nor its header ever receive a dispatch.
+        val navigationView = mNavigationView!!
+        root.setOnApplyWindowInsetsListenerCompat { _, insets ->
+            navigationView.getHeaderView(0)?.updatePadding(
+                top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            )
+            insets
+        }
+
+        val mDrawerHeader = navigationView.getHeaderView(0)
+        mNavViewDeviceName = mDrawerHeader.findViewById(R.id.device_name)
+        val mNavViewDeviceType = mDrawerHeader.findViewById<ImageView>(R.id.device_type)
+
+        setSupportActionBar(binding.toolbarLayout.toolbar)
+        mDrawerLayout?.let {
+            supportActionBar?.setDisplayHomeAsUpEnabled(true)
+            mDrawerToggle = DrawerToggle(it).apply { syncState() }
+            it.addDrawerListener(mDrawerToggle!!)
+            it.setDrawerShadow(R.drawable.drawer_shadow, GravityCompat.START)
+        } ?: run {
+            supportActionBar?.setDisplayShowHomeEnabled(false)
+            supportActionBar?.setHomeButtonEnabled(false)
+        }
+
+        val deviceName = DeviceHelper.getDeviceName(this)
+        mNavViewDeviceType?.setImageDrawable(DeviceHelper.deviceType.getIcon(this))
+        mNavViewDeviceName?.text = deviceName
+        navigationView.setNavigationItemSelectedListener { menuItem: MenuItem ->
+            mCurrentMenuEntry = menuItem.itemId
+            when (mCurrentMenuEntry) {
+                MENU_ENTRY_ADD_DEVICE -> {
+                    mCurrentDevice = null
+                    preferences.edit { putString(STATE_SELECTED_DEVICE, null) }
+                    setContentFragment(PairingFragment())
+                }
+
+                MENU_ENTRY_SETTINGS -> {
+                    preferences.edit { putString(STATE_SELECTED_DEVICE, null) }
+                    setContentFragment(SettingsFragment())
+                }
+
+                MENU_ENTRY_ABOUT -> {
+                    preferences.edit { putString(STATE_SELECTED_DEVICE, null) }
+                    setContentFragment(AboutFragment.newInstance())
+                }
+
+                else -> {
+                    val deviceId = mMapMenuToDeviceId[menuItem]
+                    onDeviceSelected(deviceId)
+                }
+            }
+            mDrawerLayout?.closeDrawer(navigationView)
+            true
         }
     }
 
@@ -276,15 +334,61 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return if (item.itemId == android.R.id.home) {
-            mDrawerLayout?.openDrawer(mNavigationView)
+            val nav = mNavigationView
+            val drawer = mDrawerLayout
+            if (nav != null && drawer != null) {
+                drawer.openDrawer(nav)
+            }
             true
         } else {
             super.onOptionsItemSelected(item)
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        ensureContentRootMatchesViewPreference()
+    }
+
+    /**
+     * Simple view must use [activity_main_simple] (zero drawer). Classic uses activity_main /
+     * layout-w820dp. If the preference and inflated root disagree, recreate so landscape cannot
+     * resurrect the permanent NavigationView side panel.
+     */
+    private fun ensureContentRootMatchesViewPreference() {
+        val simple = SimpleViewPreferences.isSimpleViewEnabled(this)
+        val hasDrawerChrome = mNavigationView != null
+        if (simple == hasDrawerChrome) {
+            recreate()
+            return
+        }
+        // Already on the correct root; keep toolbar chrome aligned.
+        if (simple) {
+            toolbarLayout.visibility = View.GONE
+            supportActionBar?.apply {
+                setDisplayShowTitleEnabled(false)
+                title = null
+                subtitle = null
+                setDisplayHomeAsUpEnabled(false)
+                hide()
+            }
+            closeDrawerCallback.isEnabled = false
+        } else {
+            toolbarLayout.visibility = View.VISIBLE
+            supportActionBar?.apply {
+                setDisplayShowTitleEnabled(true)
+                show()
+            }
+            mDrawerLayout?.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED)
+            mDrawerToggle?.isDrawerIndicatorEnabled = true
+            supportActionBar?.setDisplayHomeAsUpEnabled(mDrawerLayout != null)
+            mDrawerToggle?.syncState()
+        }
+    }
+
     private fun updateDeviceList() {
-        val menu = mNavigationView.menu
+        val navigationView = mNavigationView ?: return
+        val menu = navigationView.menu
         menu.clear()
         mMapMenuToDeviceId.clear()
         val devicesMenu = menu.addSubMenu(R.string.devices)
@@ -312,7 +416,7 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
         if (mCurrentMenuEntry >= MENU_ENTRY_DEVICE_FIRST_ID) {
             mCurrentMenuEntry = deviceIdToMenuEntryId(mCurrentDevice)
         }
-        mNavigationView.setCheckedItem(mCurrentMenuEntry)
+        navigationView.setCheckedItem(mCurrentMenuEntry)
     }
 
     override fun onStart() {
@@ -335,20 +439,30 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
     fun onDeviceSelected(deviceId: String?, fromDeviceList: Boolean = false) {
         mCurrentDevice = deviceId
         preferences.edit { putString(STATE_SELECTED_DEVICE, deviceId) }
+        val navigationView = mNavigationView
         if (deviceId != null) {
             mCurrentMenuEntry = deviceIdToMenuEntryId(deviceId)
-            if (mCurrentMenuEntry == MENU_ENTRY_DEVICE_UNKNOWN) {
-                uncheckAllMenuItems(mNavigationView.menu)
-            } else {
-                mNavigationView.setCheckedItem(mCurrentMenuEntry)
+            if (navigationView != null) {
+                if (mCurrentMenuEntry == MENU_ENTRY_DEVICE_UNKNOWN) {
+                    uncheckAllMenuItems(navigationView.menu)
+                } else {
+                    navigationView.setCheckedItem(mCurrentMenuEntry)
+                }
             }
             setContentFragment(DeviceFragment.newInstance(deviceId, fromDeviceList))
         } else {
             mCurrentMenuEntry = MENU_ENTRY_ADD_DEVICE
-            mNavigationView.setCheckedItem(mCurrentMenuEntry)
-            setContentFragment(PairingFragment())
+            navigationView?.setCheckedItem(mCurrentMenuEntry)
+            setContentFragment(simpleHomeOrPairingFragment())
         }
     }
+
+    private fun simpleHomeOrPairingFragment(): Fragment =
+        if (SimpleViewPreferences.isSimpleViewEnabled(this)) {
+            SimpleHomeFragment()
+        } else {
+            PairingFragment()
+        }
 
     private val currentFragment: Fragment?
         get() = supportFragmentManager.findFragmentById(R.id.container)
@@ -368,8 +482,12 @@ class MainActivity : AppCompatActivity(), OnSharedPreferenceChangeListener {
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
         if (DeviceHelper.KEY_DEVICE_NAME_PREFERENCE == key) {
-            mNavViewDeviceName.text = DeviceHelper.getDeviceName(this)
+            mNavViewDeviceName?.text = DeviceHelper.getDeviceName(this)
             BackgroundService.ForceRefreshConnections(this) //Re-send our identity packet
+        }
+        if (SimpleViewPreferences.KEY_SIMPLE_VIEW_ENABLED == key) {
+            // Swap between drawer-free simple root and classic drawer layouts.
+            recreate()
         }
     }
 

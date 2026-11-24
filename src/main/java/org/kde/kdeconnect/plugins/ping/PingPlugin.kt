@@ -63,6 +63,10 @@ class PingPlugin : Plugin() {
             }
         }
 
+        if (!NotificationHelper.areAlertNotificationsEnabled(context)) {
+            return true
+        }
+
         val notificationManager = context.getSystemService<NotificationManager>()!!
 
         val notification = NotificationCompat.Builder(context, NotificationHelper.Channels.DEFAULT)

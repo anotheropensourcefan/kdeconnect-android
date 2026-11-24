@@ -42,6 +42,7 @@ internal class ReceiveNotification(private val device: Device, private val jobId
     }
 
     fun show() {
+        if (!NotificationHelper.areAlertNotificationsEnabled(device.context)) return
         notificationManager.notify(notificationId, builder.build())
     }
 

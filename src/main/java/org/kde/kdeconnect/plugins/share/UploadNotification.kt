@@ -86,6 +86,7 @@ internal class UploadNotification {
     }
 
     fun show() {
+        if (!NotificationHelper.areAlertNotificationsEnabled(device.context)) return
         notificationManager.notify(notificationId, builder.build())
     }
 }

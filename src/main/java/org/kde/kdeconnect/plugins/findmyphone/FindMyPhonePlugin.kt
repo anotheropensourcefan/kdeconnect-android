@@ -152,6 +152,7 @@ class FindMyPhonePlugin : Plugin() {
             .setContentTitle(context.getString(R.string.findmyphone_found))
             .setGroup("BackgroundService")
 
+        if (!NotificationHelper.areAlertNotificationsEnabled(context)) return
         notificationManager.notify(notificationId, notification.build())
     }
 

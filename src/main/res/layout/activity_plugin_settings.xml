@@ -2,6 +2,7 @@
 
 <!--
 SPDX-FileCopyrightText: 2019 Erik Duisters <e.duisters1@gmail.com>
+SPDX-FileCopyrightText: 2026
 
 SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 -->
@@ -9,16 +10,46 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    xmlns:tools="http://schemas.android.com/tools"
     tools:context="org.kde.kdeconnect.ui.PluginSettingsActivity">
 
-    <include layout="@layout/toolbar" android:id="@+id/toolbar_layout" />
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/app_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="true">
 
-    <FrameLayout
-        android:id="@+id/fragmentPlaceHolder"
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            tools:title="@string/settings" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <!--
+      Content column: in classic mode AppBarLayout provides the top chrome and this
+      LinearLayout sits below via scrolling behavior. In simple view AppBar is hidden
+      and simple_settings_chrome is the full-width icon row (status-bar padded in Compose),
+      matching SimpleHomeScreen's TopIconRow placement.
+    -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"/>
+        android:orientation="vertical"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <androidx.compose.ui.platform.ComposeView
+            android:id="@+id/simple_settings_chrome"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/fragmentPlaceHolder"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
